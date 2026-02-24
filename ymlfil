@@ -1,0 +1,46 @@
+trigger:
+- main
+
+variables:
+  dockerRegistryServiceConnection: 'skproductapicontainer'
+  azureSubscription: 'Azure subscription 1 (d479fc0f-bfb9-4305-bc36-70700817a735)'
+  imageRepository: 'skproduct'
+  containerRegistry: 'skproductapicontainer.azurecr.io'
+  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
+  tag: '$(Build.BuildId)'
+
+stages:
+
+# ---------------- BUILD STAGE ----------------
+- stage: Build
+  displayName: Build and Push
+  jobs:
+  - job: Build
+    pool:
+      name: Default
+    steps:
+    - task: Docker@2
+      displayName: Build and push image
+      inputs:
+        command: buildAndPush
+        repository: $(imageRepository)
+        dockerfile: $(dockerfilePath)
+        containerRegistry: $(dockerRegistryServiceConnection)
+        tags: |
+          $(tag)
+
+# ---------------- DEPLOY STAGE ----------------
+- stage: Deploy
+  displayName: Deploy to Azure Web App
+  dependsOn: Build
+  jobs:
+  - job: Deploy
+    pool:
+      name: Default
+    steps:
+    - task: AzureWebAppContainer@1
+      displayName: Deploy container to Web App
+      inputs:
+        azureSubscription: $(azureSubscription)
+        appName: 'skproductwebapi'
+        containers: 'skproductapicontainer.azurecr.io/skproduct:$(Build.BuildId)'
