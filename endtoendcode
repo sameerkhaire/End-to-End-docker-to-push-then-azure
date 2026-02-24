@@ -8,38 +8,31 @@ builder.WebHost.ConfigureKestrel(options =>
         listenOptions.UseHttps("/https/devcert.pfx", "Sam7038@");
     });
 });
-docker build -t ecommerceapi .
-docker run -d -p 8080:8080 -p 8081:8081 ecommerceapi
 
+az group create --name EcommerceRG --location eastus2
+az acr create --resource-group EcommerceRG --name ecommercemyapiregistry --sku Basic --location eastus2
+az acr login --name ecommercemyapiregistry
 
-az acr create --resource-group ecommerce-rg --name ecommerceacrsameer2026 --sku Basic --admin-enabled true
+docker build -t ecommercemyapiregistry.azurecr.io/ecommerceapi:v1 .
 
+docker push ecommercemyapiregistry.azurecr.io/ecommerceapi:v1
 
-az appservice plan create ^
---name ecommerce-app-plan ^
---resource-group ecommerce-rg ^
---is-linux ^
---sku B1
-
-az webapp create ^
---resource-group ecommerce-rg ^
---plan ecommerce-app-plan ^
---name ecommerce-api-sameer-2026 ^
---deployment-container-image-name ecommerceacrsameer2026.azurecr.io/ecommerceapi:v1
+az appservice plan create --name EcommerceAppServicePlan --resource-group EcommerceRG --sku B1 --is-linux --location eastus2
+az webapp create --resource-group EcommerceRG --plan EcommerceAppServicePlan --name ecommerce-api-webapp --deployment-container-image-name ecommercemyapiregistry.azurecr.io/ecommerce-api:latest
 
 az webapp config container set ^
---name ecommerce-api-sameer-2026 ^
---resource-group ecommerce-rg ^
---docker-custom-image-name ecommerceacrsameer2026.azurecr.io/ecommerceapi:v1 ^
---docker-registry-server-url https://ecommerceacrsameer2026.azurecr.io ^
---docker-registry-server-user ecommerceacrsameer2026 ^
---docker-registry-server-password <ACR_PASSWORD>
-
-az webapp config appsettings set ^
---resource-group ecommerce-rg ^
---name ecommerce-api-sameer-2026 ^
---settings WEBSITES_PORT=8080
-
-az webapp restart ^
---name ecommerce-api-sameer-2026 ^
---resource-group ecommerce-rg
+  --name ecommerce-api-webapp ^
+  --resource-group EcommerceRG ^
+  --docker-custom-image-name ecommercemyapiregistry.azurecr.io/ecommerceapi:v1 ^
+  --docker-registry-server-url https://ecommercemyapiregistry.azurecr.io ^
+  --docker-registry-server-user ecommercemyapiregistry ^
+  --docker-registry-server-password 6qigWu31B10l3Hpc4IjU6h3tOhY7h4TEDOvKMs2Mxvrm7SFpVhcEJQQJ99CBACHYHv6Eqg7NAAACAZCRQkUE
+  
+  
+  
+  az webapp config appsettings set ^
+  --name ecommerce-api-webapp ^
+  --resource-group EcommerceRG ^
+  --settings WEBSITES_PORT=8080 ASPNETCORE_URLS=http://+:8080
+  
+  az webapp restart --name ecommerce-api-webapp --resource-group EcommerceRG
