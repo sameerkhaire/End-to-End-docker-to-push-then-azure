@@ -1,0 +1,98 @@
+trigger:
+- main
+
+pool:
+  name: 'Default'
+  demands:
+    - docker
+
+variables:
+  AZURE_SUBSCRIPTION_CONNECTION: 'Azure subscription 1 (d479fc0f-bfb9-4305-bc36-70700817a735)'
+  ACR_SERVICE_CONNECTION: 'skproductapicontainer'
+  ACR_NAME: 'skproductapicontainer'
+  IMAGE_NAME: 'ecommerceapi'
+  IMAGE_TAG: 'v1'
+  RESOURCE_GROUP: 'EcommerceRG'
+  APP_SERVICE_PLAN: 'EcommerceAppServicePlan'
+  WEBAPP_NAME: 'ecommerce-api-webapp'
+  LOCATION: 'eastus2'
+
+steps:
+
+  # Verify Docker and Azure CLI
+  - powershell: |
+      Write-Host "Checking Docker and Azure CLI versions..."
+      docker --version
+      az --version
+    displayName: "Verify Agent Tools"
+
+  # Prepare Azure Resources
+  - task: AzureCLI@2
+    displayName: "Prepare Azure Resources"
+    inputs:
+      azureSubscription: '$(AZURE_SUBSCRIPTION_CONNECTION)'
+      scriptType: ps
+      scriptLocation: inlineScript
+      inlineScript: |
+        Write-Host "Creating Resource Group if missing..."
+        try {
+            az group create `
+                --name $env:RESOURCE_GROUP `
+                --location $env:LOCATION
+        }
+        catch {
+            Write-Host "Resource Group might already exist."
+        }
+
+        Write-Host "Creating App Service Plan..."
+        try {
+            az appservice plan create `
+                --name $env:APP_SERVICE_PLAN `
+                --resource-group $env:RESOURCE_GROUP `
+                --sku B1 `
+                --is-linux `
+                --location $env:LOCATION
+        }
+        catch {
+            Write-Host "App Service Plan might already exist."
+        }
+
+        Write-Host "Creating Web App if missing..."
+        try {
+            az webapp create `
+                --resource-group $env:RESOURCE_GROUP `
+                --plan $env:APP_SERVICE_PLAN `
+                --name $env:WEBAPP_NAME `
+                --deployment-container-image-name "$env:ACR_NAME.azurecr.io/$env:IMAGE_NAME:$env:IMAGE_TAG"
+        }
+        catch {
+            Write-Host "Web App might already exist."
+        }
+
+
+  - task: Docker@2
+    displayName: Build and Push Image
+    inputs:
+     containerRegistry: '$(ACR_SERVICE_CONNECTION)'
+     repository: '$(IMAGE_NAME)'
+     command: 'buildAndPush'
+     Dockerfile: '**/Dockerfile'
+     tags: |
+      $(IMAGE_TAG)
+      latest
+
+
+  - task: AzureWebAppContainer@1
+    displayName: "Deploy Container to Azure Web App"
+    inputs:
+     azureSubscription: '$(AZURE_SUBSCRIPTION_CONNECTION)'
+     appName: '$(WEBAPP_NAME)'
+     resourceGroupName: '$(RESOURCE_GROUP)'
+     imageName: '$(ACR_NAME).azurecr.io/$(IMAGE_NAME):$(IMAGE_TAG)'
+     scriptType: ps
+     scriptLocation: inlineScript
+     inlineScript: |
+      az webapp config appsettings set `
+        --name $(WEBAPP_NAME) `
+        --resource-group $(RESOURCE_GROUP) `
+        --settings WEBSITES_PORT=8080 ASPNETCORE_URLS=http://+:8080
